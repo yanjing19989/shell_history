@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile source
+        run: python -m py_compile app.py build.py
+      - name: Build standalone file
+        run: python build.py --output dist/shell_history.py
+      - name: Compile standalone file
+        run: python -m py_compile dist/shell_history.py
+      - name: Smoke test HTTP server
+        run: |
+          python - <<'PY'
+          import json
+          import subprocess
+          import sys
+          import time
+          from urllib.request import urlopen
+
+          proc = subprocess.Popen([sys.executable, "dist/shell_history.py", "--no-browser", "--port", "8765"])
+          try:
+              for _ in range(30):
+                  try:
+                      with urlopen("http://127.0.0.1:8765/api/shells", timeout=1) as response:
+                          assert response.status == 200
+                          assert "shells" in json.load(response)
+                          break
+                  except Exception:
+                      time.sleep(0.2)
+              else:
+                  raise RuntimeError("standalone server did not start")
+          finally:
+              proc.terminate()
+              proc.wait(timeout=5)
+          PY

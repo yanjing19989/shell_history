@@ -208,6 +208,9 @@ def save_data(body):
             return {"error": str(exc)}, 500
 
 
+# Build-time generated single-file distributions replace this mapping with
+# embedded bytes. The source checkout keeps assets in templates/ and static/.
+EMBEDDED_ASSETS = None
 BASE_DIR = Path(__file__).resolve().parent
 
 
@@ -226,10 +229,12 @@ class HistoryHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
-    def send_file(self, path, content_type):
+    def send_file(self, path, content_type, asset_key=None):
         try:
-            raw = path.read_bytes()
-        except OSError:
+            raw = EMBEDDED_ASSETS[asset_key] if EMBEDDED_ASSETS is not None and asset_key else path.read_bytes()
+            if isinstance(raw, str):
+                raw = raw.encode("utf-8")
+        except (KeyError, OSError):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         self.send_response(HTTPStatus.OK)
@@ -243,7 +248,7 @@ class HistoryHandler(BaseHTTPRequestHandler):
         route = unquote(parsed.path)
         try:
             if route == "/":
-                return self.send_file(BASE_DIR / "templates" / "index.html", "text/html; charset=utf-8")
+                return self.send_file(BASE_DIR / "templates" / "index.html", "text/html; charset=utf-8", "templates/index.html")
             if route == "/api/shells":
                 return self.send_json(shells_data())
             if route == "/api/history":
@@ -251,10 +256,13 @@ class HistoryHandler(BaseHTTPRequestHandler):
                 return self.send_json(data, status)
             if route.startswith("/static/"):
                 static_root = (BASE_DIR / "static").resolve()
+                asset_key = route.removeprefix("/")
                 file_path = (static_root / route.removeprefix("/static/")).resolve()
-                if static_root not in file_path.parents or not file_path.is_file():
+                if EMBEDDED_ASSETS is None and (static_root not in file_path.parents or not file_path.is_file()):
                     return self.send_error(HTTPStatus.NOT_FOUND)
-                return self.send_file(file_path, guess_type(str(file_path))[0] or "application/octet-stream")
+                if EMBEDDED_ASSETS is not None and asset_key not in EMBEDDED_ASSETS:
+                    return self.send_error(HTTPStatus.NOT_FOUND)
+                return self.send_file(file_path, guess_type(asset_key)[0] or "application/octet-stream", asset_key)
             self.send_error(HTTPStatus.NOT_FOUND)
         except Exception as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
