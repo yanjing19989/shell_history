@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>命令历史管理器</title><link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="shell">
+  <header><div><h1>命令历史</h1><p class="sub">本机历史记录管理器</p></div><select id="theme"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></header>
+  <section class="controls"><select id="shellSelect"></select><input id="pathInput" placeholder="历史文件路径"><button id="loadBtn">加载</button><button id="browseBtn">选择文件</button><input id="filePicker" type="file" hidden></section>
+  <section id="stats" class="stats"></section>
+  <section class="toolbar"><input id="search" placeholder="搜索命令…"><select id="timeFilter"><option value="all">全部时间戳</option><option value="with">有时间戳</option><option value="without">无时间戳</option></select><select id="sort"><option value="line_number">行号</option><option value="command">命令</option><option value="timestamp">时间</option></select><button id="dir">↑</button><button id="selectAll">全选</button><button id="deleteBtn" class="danger">删除</button><button id="dedupeBtn">仅保留一个</button><button id="saveBtn" class="primary">保存</button></section>
+  <div id="notice" class="notice"></div>
+  <section class="table-wrap"><table><thead><tr><th></th><th>命令</th><th>Shell</th><th>时间戳</th><th>行号</th></tr></thead><tbody id="rows"></tbody></table><div id="empty" class="empty">请选择 shell 并加载历史记录</div></section>
+</main><script src="/static/app.js"></script>
+</body></html>
