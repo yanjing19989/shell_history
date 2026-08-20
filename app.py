@@ -7,16 +7,15 @@ import shutil
 import tempfile
 import threading
 import webbrowser
+import argparse
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from mimetypes import guess_type
 from pathlib import Path
 from typing import Optional
-
-from flask import Flask, jsonify, render_template, request
-
-
-app = Flask(__name__)
-
+from urllib.parse import parse_qs, unquote, urlsplit
 
 @dataclass
 class Record:
@@ -140,32 +139,25 @@ def payload(records):
     return {"records": [asdict(r) for r in records], "stats": stats(records)}
 
 
-@app.get("/")
-def index():
-    return render_template("index.html")
+def shells_data():
+    return {"shells": [{"name": a.name, "label": a.label, "path": str(a.detect()) if a.detect() else None, "available": bool(a.detect())} for a in ADAPTERS.values()]}
 
 
-@app.get("/api/shells")
-def shells():
-    return jsonify({"shells": [{"name": a.name, "label": a.label, "path": str(a.detect()) if a.detect() else None, "available": bool(a.detect())} for a in ADAPTERS.values()]})
-
-
-@app.get("/api/history")
-def history():
-    name = request.args.get("shell", "")
+def history_data(query):
+    name = query.get("shell", [""])[0]
     adapter = ADAPTERS.get(name)
     if not adapter:
-        return jsonify({"error": "unknown shell"}), 400
-    path = Path(request.args.get("path") or adapter.detect() or "")
-    if not path or not path.is_file():
-        return jsonify({"error": "history file not found", "shell": name}), 404
+        return {"error": "unknown shell"}, 400
+    path = Path(query.get("path", [None])[0] or adapter.detect() or "")
+    if not path.is_file():
+        return {"error": "history file not found", "shell": name}, 404
     try:
         records, encoding = adapter.parse(path)
         result = payload(records)
         result.update({"shell": name, "path": str(path), "encoding": encoding})
-        return jsonify(result)
+        return result, 200
     except OSError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return {"error": str(exc)}, 400
 
 
 def records_from_json(items, shell, path):
@@ -177,27 +169,23 @@ def records_from_json(items, shell, path):
     return out
 
 
-@app.post("/api/history/preview")
-def preview():
-    body = request.get_json(silent=True) or {}
+def preview_data(body):
     shell, path = body.get("shell"), body.get("path")
     adapter = ADAPTERS.get(shell)
     if not adapter or not path:
-        return jsonify({"error": "shell and path are required"}), 400
+        return {"error": "shell and path are required"}, 400
     records = records_from_json(body.get("records", []), shell, path)
-    return jsonify({"path": path, "shell": shell, "count": len(records), "stats": stats(records), "content": adapter.serialize(records)})
+    return {"path": path, "shell": shell, "count": len(records), "stats": stats(records), "content": adapter.serialize(records)}, 200
 
 
-@app.post("/api/history/save")
-def save():
-    body = request.get_json(silent=True) or {}
+def save_data(body):
     shell, path_value = body.get("shell"), body.get("path")
     adapter = ADAPTERS.get(shell)
     if not adapter or not path_value:
-        return jsonify({"error": "shell and path are required"}), 400
+        return {"error": "shell and path are required"}, 400
     path = Path(path_value).expanduser()
     if not path.is_file():
-        return jsonify({"error": "history file not found"}), 404
+        return {"error": "history file not found"}, 404
     records = records_from_json(body.get("records", []), shell, path)
     content = adapter.serialize(records)
     with _lock:
@@ -215,15 +203,100 @@ def save():
             finally:
                 if os.path.exists(temp_name):
                     os.unlink(temp_name)
-            return jsonify({"ok": True, "backup": str(backup), "path": str(path), "stats": stats(records)})
+            return {"ok": True, "backup": str(backup), "path": str(path), "stats": stats(records)}, 200
         except OSError as exc:
-            return jsonify({"error": str(exc)}), 500
+            return {"error": str(exc)}, 500
 
 
-def open_browser():
-    webbrowser.open("http://127.0.0.1:5000")
+BASE_DIR = Path(__file__).resolve().parent
+
+
+class HistoryHandler(BaseHTTPRequestHandler):
+    server_version = "ShellHistory/1.0"
+
+    def log_message(self, format, *args):
+        # Keep the local tool's console quiet except for errors raised by handlers.
+        return
+
+    def send_json(self, data, status=HTTPStatus.OK):
+        raw = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def send_file(self, path, content_type):
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def do_GET(self):
+        parsed = urlsplit(self.path)
+        route = unquote(parsed.path)
+        try:
+            if route == "/":
+                return self.send_file(BASE_DIR / "templates" / "index.html", "text/html; charset=utf-8")
+            if route == "/api/shells":
+                return self.send_json(shells_data())
+            if route == "/api/history":
+                data, status = history_data(parse_qs(parsed.query))
+                return self.send_json(data, status)
+            if route.startswith("/static/"):
+                static_root = (BASE_DIR / "static").resolve()
+                file_path = (static_root / route.removeprefix("/static/")).resolve()
+                if static_root not in file_path.parents or not file_path.is_file():
+                    return self.send_error(HTTPStatus.NOT_FOUND)
+                return self.send_file(file_path, guess_type(str(file_path))[0] or "application/octet-stream")
+            self.send_error(HTTPStatus.NOT_FOUND)
+        except Exception as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def do_POST(self):
+        route = unquote(urlsplit(self.path).path)
+        length = int(self.headers.get("Content-Length", "0"))
+        if length > 50 * 1024 * 1024:
+            return self.send_json({"error": "request body too large"}, HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return self.send_json({"error": "invalid JSON body"}, HTTPStatus.BAD_REQUEST)
+        try:
+            if route == "/api/history/preview":
+                data, status = preview_data(body)
+            elif route == "/api/history/save":
+                data, status = save_data(body)
+            else:
+                return self.send_error(HTTPStatus.NOT_FOUND)
+            self.send_json(data, status)
+        except Exception as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+
+
+def open_browser(host, port):
+    webbrowser.open("http://{}:{}".format(host, port))
 
 
 if __name__ == "__main__":
-    threading.Timer(0.8, open_browser).start()
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    parser = argparse.ArgumentParser(prog="shell_history")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", default=7000, type=int)
+    parser.add_argument("--no-browser", action="store_true")
+    args = parser.parse_args()
+    if not args.no_browser:
+        threading.Timer(0.8, lambda: open_browser(args.host, args.port)).start()
+    print("Starting ShellHistory server at http://{}:{}".format(args.host, args.port))
+    server = ThreadingHTTPServer((args.host, args.port), HistoryHandler)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
