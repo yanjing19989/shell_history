@@ -11,5 +11,6 @@
   <section class="toolbar"><button id="modeToggle" class="primary" type="button" title="切换显示模式">时间模式</button><input id="search" placeholder="搜索命令或正则表达式…"><button id="selectAll">全选</button><button id="invertSelect">反选</button><button id="copyBtn">复制</button><button id="deleteBtn" class="danger">删除</button><button id="dedupeBtn" class="danger">仅保留一个</button><button id="saveBtn" class="primary">保存</button></section>
   <div id="notice" class="notice"></div>
   <section class="table-wrap"><table><thead><tr><th>选择</th><th class="sortable" data-sort="line_number">行号 <span class="sort-indicator">↑</span></th><th class="sortable" data-sort="command">命令 <span class="sort-indicator"></span></th><th id="valueHead" class="sortable" data-sort="timestamp">时间戳 <span class="sort-indicator"></span></th></tr></thead><tbody id="rows"></tbody></table><div id="empty" class="empty">请选择 shell 并加载历史记录</div></section>
+  <dialog id="cmdDialog"><div class="dlg-head"><span id="dlgMeta"></span><div class="dlg-actions"><button id="dlgCopy" type="button">复制</button><button id="dlgClose" type="button">关闭</button></div></div><pre id="dlgBody"></pre></dialog>
 </main><script src="/static/app.js"></script>
 </body></html>

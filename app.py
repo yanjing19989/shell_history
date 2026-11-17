@@ -30,6 +30,7 @@ class Record:
 class Adapter:
     name = ""
     label = ""
+    cont_char = ""
 
     def candidates(self):
         return []
@@ -44,19 +45,37 @@ class Adapter:
         raw, encoding = read_text(path)
         return self.parse_text(raw, path), encoding
 
+    def _has_cont(self, line):
+        return bool(self.cont_char) and (len(line) - len(line.rstrip(self.cont_char))) % 2 == 1
+
+    def _encode_cmd(self, cmd):
+        return cmd.replace("\n", f"{self.cont_char}\n") if self.cont_char else cmd
+
     def parse_text(self, text, path):
-        records = []
+        records, buf, start = [], [], 0
         for i, line in enumerate(text.splitlines(), 1):
-            if line.strip():
-                records.append(Record(f"{self.name}:{i}", line, None, self.name, str(path), i))
+            if not buf:
+                start = i
+            if self._has_cont(line):
+                buf.append(line[:-1])
+                continue
+            buf.append(line)
+            cmd = "\n".join(buf)
+            buf = []
+            if cmd.strip():
+                records.append(Record(f"{self.name}:{start}", cmd, None, self.name, str(path), start))
+        if buf:
+            cmd = "\n".join(buf)
+            if cmd.strip():
+                records.append(Record(f"{self.name}:{start}", cmd, None, self.name, str(path), start))
         return records
 
     def serialize(self, records):
-        return "\n".join(r.command for r in records) + ("\n" if records else "")
+        return "\n".join(self._encode_cmd(r.command) for r in records) + ("\n" if records else "")
 
 
 class PowerShellAdapter(Adapter):
-    name, label = "powershell", "PowerShell"
+    name, label, cont_char = "powershell", "PowerShell", "`"
 
     def candidates(self):
         appdata = os.environ.get("APPDATA")
@@ -72,41 +91,51 @@ class PowerShellAdapter(Adapter):
 
 
 class BashAdapter(Adapter):
-    name, label = "bash", "Bash"
+    name, label, cont_char = "bash", "Bash", "\\"
 
     def candidates(self):
         return [Path(os.environ.get("HISTFILE", ""))] if os.environ.get("HISTFILE") else [Path.home() / ".bash_history"]
 
 
 class ZshAdapter(Adapter):
-    name, label = "zsh", "Zsh"
+    name, label, cont_char = "zsh", "Zsh", "\\"
     _header = re.compile(r": (\d+):\d+;?(.*)")
 
     def candidates(self):
         return [Path(os.environ.get("HISTFILE", ""))] if os.environ.get("HISTFILE") else [Path.home() / ".zsh_history"]
 
     def parse_text(self, text, path):
-        records = []
+        records, buf, start, ts = [], [], 0, None
         for i, line in enumerate(text.splitlines(), 1):
-            ts = None
-            command = line
-            m = self._header.match(line)
-            if m:
-                try:
-                    ts = datetime.fromtimestamp(int(m.group(1)), timezone.utc).isoformat()
-                except ValueError:
-                    pass
-                command = m.group(2)
-            if command.strip():
-                records.append(Record(f"{self.name}:{i}", command, ts, self.name, str(path), i))
+            if not buf:
+                start, ts = i, None
+                m = self._header.match(line)
+                if m:
+                    try:
+                        ts = datetime.fromtimestamp(int(m.group(1)), timezone.utc).isoformat()
+                    except ValueError:
+                        pass
+                    line = m.group(2)
+            if self._has_cont(line):
+                buf.append(line[:-1])
+                continue
+            buf.append(line)
+            cmd = "\n".join(buf)
+            buf = []
+            if cmd.strip():
+                records.append(Record(f"{self.name}:{start}", cmd, ts, self.name, str(path), start))
+        if buf:
+            cmd = "\n".join(buf)
+            if cmd.strip():
+                records.append(Record(f"{self.name}:{start}", cmd, ts, self.name, str(path), start))
         return records
 
     def serialize(self, records):
-        return "\n".join((f": {int(datetime.fromisoformat(r.timestamp).timestamp())}:0;{r.command}" if r.timestamp else r.command) for r in records) + ("\n" if records else "")
+        return "\n".join((f": {int(datetime.fromisoformat(r.timestamp).timestamp())}:0;{self._encode_cmd(r.command)}" if r.timestamp else self._encode_cmd(r.command)) for r in records) + ("\n" if records else "")
 
 
 class CmdAdapter(Adapter):
-    name, label = "cmd", "Command Prompt"
+    name, label, cont_char = "cmd", "Command Prompt", "^"
 
     def candidates(self):
         # cmd.exe has no standard persistent history file; support common user-configured paths.
