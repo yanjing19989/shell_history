@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import base64
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
 SOURCE = ROOT / "app.py"
-ASSETS = [ROOT / "templates" / "index.html", ROOT / "static" / "app.js", ROOT / "static" / "style.css"]
+TEXT_ASSETS = [ROOT / "templates" / "index.html", ROOT / "static" / "app.js", ROOT / "static" / "style.css"]
 
 
 def build(output: Path) -> Path:
@@ -15,7 +16,12 @@ def build(output: Path) -> Path:
     marker = "EMBEDDED_ASSETS = None"
     if marker not in source:
         raise RuntimeError(f"build marker not found in {SOURCE}")
-    assets = {path.relative_to(ROOT).as_posix(): path.read_bytes().decode("utf-8") for path in ASSETS}
+
+    assets = {path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8") for path in TEXT_ASSETS}
+    favicon = ROOT / "favicon.ico"
+    if favicon.is_file():
+        assets["favicon.ico"] = {"base64": base64.b64encode(favicon.read_bytes()).decode("ascii")}
+
     embedded = "EMBEDDED_ASSETS = " + json.dumps(assets, ensure_ascii=False, indent=2) + "\n"
     artifact = source.replace(marker, embedded.rstrip(), 1)
     output.parent.mkdir(parents=True, exist_ok=True)

@@ -8,6 +8,7 @@ import tempfile
 import threading
 import webbrowser
 import argparse
+import base64
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -260,9 +261,14 @@ class HistoryHandler(BaseHTTPRequestHandler):
 
     def send_file(self, path, content_type, asset_key=None):
         try:
-            raw = EMBEDDED_ASSETS[asset_key] if EMBEDDED_ASSETS is not None and asset_key else path.read_bytes()
-            if isinstance(raw, str):
-                raw = raw.encode("utf-8")
+            embedded = EMBEDDED_ASSETS[asset_key] if EMBEDDED_ASSETS is not None and asset_key else None
+            if embedded is not None:
+                if isinstance(embedded, dict) and "base64" in embedded:
+                    raw = base64.b64decode(embedded["base64"])
+                else:
+                    raw = embedded.encode("utf-8") if isinstance(embedded, str) else embedded
+            else:
+                raw = path.read_bytes()
         except (KeyError, OSError):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
@@ -278,6 +284,8 @@ class HistoryHandler(BaseHTTPRequestHandler):
         try:
             if route == "/":
                 return self.send_file(BASE_DIR / "templates" / "index.html", "text/html; charset=utf-8", "templates/index.html")
+            if route == "/favicon.ico":
+                return self.send_file(BASE_DIR / "favicon.ico", "image/x-icon", "favicon.ico")
             if route == "/api/shells":
                 return self.send_json(shells_data())
             if route == "/api/history":

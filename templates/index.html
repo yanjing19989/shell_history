@@ -2,11 +2,11 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>命令历史管理器</title><link rel="stylesheet" href="/static/style.css">
+  <title>命令历史管理器</title><link rel="icon" href="/favicon.ico" type="image/x-icon"><link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <main class="shell">
-  <header><div class="brand"><h1>命令历史</h1><p class="sub">本机历史记录管理器</p></div><section id="stats" class="stats"></section><button id="theme" class="theme-toggle" type="button" title="切换主题" aria-label="切换主题"><span class="theme-icon">◐</span><span class="theme-label">跟随系统</span></button></header>
+  <header><div class="brand"><div class="brand-title"><img class="brand-icon" src="/favicon.ico" alt=""><h1>命令历史</h1></div><p class="sub">本机历史记录管理器</p></div><section id="stats" class="stats"></section><button id="theme" class="theme-toggle" type="button" title="切换主题" aria-label="切换主题"><span class="theme-icon">◐</span><span class="theme-label">跟随系统</span></button></header>
   <section class="controls"><select id="shellSelect"></select><input id="pathInput" placeholder="历史文件路径"><button id="loadBtn">加载</button><button id="browseBtn">选择文件</button><input id="filePicker" type="file" hidden></section>
   <section class="toolbar"><button id="modeToggle" class="primary" type="button" title="切换显示模式">时间模式</button><input id="search" placeholder="搜索命令或正则表达式…"><button id="selectAll">全选</button><button id="invertSelect">反选</button><button id="copyBtn">复制</button><button id="deleteBtn" class="danger">删除</button><button id="dedupeBtn" class="danger">仅保留一个</button><button id="saveBtn" class="primary">保存</button></section>
   <div id="notice" class="notice"></div>

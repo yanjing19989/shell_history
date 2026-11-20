@@ -1,4 +1,4 @@
-# Shell History
+# <img src="favicon.ico" width="32" height="32" alt=""> Shell History
 
 一个轻量、无需第三方依赖的本机 Shell 历史记录 Web 管理器。
 
